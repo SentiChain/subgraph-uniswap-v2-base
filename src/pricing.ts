@@ -71,12 +71,18 @@ export function findEthPerToken(token: Token): BigDecimal {
       if (token0 === null || token1 === null) continue
 
       // Calculate derived ETH based on pair liquidity
-      if (pair.token0 == token.id && token1.derivedETH !== null && token1.derivedETH.gt(ZERO_BD)) {
-        largestLiquidityETH = pair.reserveETH
-        priceSoFar = pair.token1Price.times(token1.derivedETH as BigDecimal)
-      } else if (pair.token1 == token.id && token0.derivedETH !== null && token0.derivedETH.gt(ZERO_BD)) {
-        largestLiquidityETH = pair.reserveETH
-        priceSoFar = pair.token0Price.times(token0.derivedETH as BigDecimal)
+      if (pair.token0 == token.id && token1.derivedETH !== null) {
+        let derivedETH1 = token1.derivedETH as BigDecimal
+        if (derivedETH1.gt(ZERO_BD)) {
+          largestLiquidityETH = pair.reserveETH
+          priceSoFar = pair.token1Price.times(derivedETH1)
+        }
+      } else if (pair.token1 == token.id && token0.derivedETH !== null) {
+        let derivedETH0 = token0.derivedETH as BigDecimal
+        if (derivedETH0.gt(ZERO_BD)) {
+          largestLiquidityETH = pair.reserveETH
+          priceSoFar = pair.token0Price.times(derivedETH0)
+        }
       }
     }
   }
@@ -111,8 +117,11 @@ export function updatePrices(pair: Pair): void {
   token1.save()
 
   // Update pair ETH reserve
-  pair.reserveETH = pair.reserve0.times(token0.derivedETH)
-                      .plus(pair.reserve1.times(token1.derivedETH))
+  let derivedETH0 = token0.derivedETH as BigDecimal
+  let derivedETH1 = token1.derivedETH as BigDecimal
+  
+  pair.reserveETH = pair.reserve0.times(derivedETH0)
+                      .plus(pair.reserve1.times(derivedETH1))
   
   // Update pair USD reserves
   if (bundle.ethPrice.gt(ZERO_BD)) {
