@@ -73,12 +73,6 @@ export function handleSync(event: Sync): void {
 
   pair.save()
 
-  // Update token liquidity
-  token0.totalLiquidity = token0.totalLiquidity.plus(pair.reserve0)
-  token1.totalLiquidity = token1.totalLiquidity.plus(pair.reserve1)
-  token0.save()
-  token1.save()
-
   // Update all USD prices
   updatePrices(pair)
 }

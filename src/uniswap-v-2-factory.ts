@@ -9,7 +9,9 @@ import {
   fetchTokenSymbol,
   fetchTokenName,
   fetchTokenDecimals,
-  fetchTokenTotalSupply
+  fetchTokenTotalSupply,
+  WETH_ADDRESS,
+  isStablecoin
 } from './helpers'
 
 export function handlePairCreated(event: PairCreated): void {
@@ -41,6 +43,7 @@ export function handlePairCreated(event: PairCreated): void {
     token0.tradeVolumeUSD = ZERO_BD
     token0.txCount = ZERO_BI
     token0.totalLiquidity = ZERO_BD
+    token0.whitelistPairs = []
   }
 
   if (token1 === null) {
@@ -54,6 +57,7 @@ export function handlePairCreated(event: PairCreated): void {
     token1.tradeVolumeUSD = ZERO_BD
     token1.txCount = ZERO_BI
     token1.totalLiquidity = ZERO_BD
+    token1.whitelistPairs = []
   }
 
   // create the tracked contract based on the template
@@ -79,15 +83,18 @@ export function handlePairCreated(event: PairCreated): void {
   pair.token0Price = ZERO_BD
   pair.token1Price = ZERO_BD
 
-  // create the bundle
-  let bundle = Bundle.load('1')
-  if (bundle === null) {
-    bundle = new Bundle('1')
-    bundle.ethPrice = ZERO_BD
-    bundle.save()
-  }
+  // Update whitelist pairs - add this pair to relevant tokens
+  let isToken0Whitelist = token0.id == WETH_ADDRESS || isStablecoin(token0.id)
+  let isToken1Whitelist = token1.id == WETH_ADDRESS || isStablecoin(token1.id)
 
-  token0.save()
-  token1.save()
-  pair.save()
-}
+  if (isToken0Whitelist || isToken1Whitelist) {
+    // Add to token0 whitelist if token1 is WETH or stablecoin
+    if (isToken1Whitelist) {
+      let whitelist0 = token0.whitelistPairs
+      whitelist0.push(pair.id)
+      token0.whitelistPairs = whitelist0
+    }
+    
+    // Add to token1 whitelist if token0 is WETH or stablecoin
+    if (isToken0Whitelist) {
+      let whitelist1 = toke

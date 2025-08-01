@@ -13,67 +13,75 @@ import {
 
 // Get ETH price in USD from stablecoin pairs
 export function getEthPriceInUSD(): BigDecimal {
-  // Check USDC pair first (native USDC)
-  let usdcPairs = findPairsWithTokens(WETH_ADDRESS, USDC_ADDRESS)
-  if (usdcPairs.length > 0) {
-    let usdcPair = Pair.load(usdcPairs[0])
-    if (usdcPair !== null && usdcPair.reserve0.gt(MINIMUM_LIQUIDITY_THRESHOLD_ETH)) {
-      if (usdcPair.token0 == WETH_ADDRESS) {
-        return usdcPair.token1Price
-      } else {
-        return usdcPair.token0Price
+  let wethToken = Token.load(WETH_ADDRESS)
+  if (wethToken === null) {
+    return ZERO_BD
+  }
+
+  // Get whitelist pairs for WETH
+  let pairs = wethToken.whitelistPairs
+  let largestLiquidityETH = ZERO_BD
+  let priceSoFar = ZERO_BD
+
+  // Go through each pair and find the one with most liquidity
+  for (let i = 0; i < pairs.length; i++) {
+    let pair = Pair.load(pairs[i])
+    if (pair === null) continue
+
+    // Check if this pair has a stablecoin
+    let isToken0Stable = isStablecoin(pair.token0)
+    let isToken1Stable = isStablecoin(pair.token1)
+    
+    if (!isToken0Stable && !isToken1Stable) continue
+
+    if (pair.reserveETH.gt(largestLiquidityETH) && pair.reserveETH.gt(MINIMUM_LIQUIDITY_THRESHOLD_ETH)) {
+      largestLiquidityETH = pair.reserveETH
+      
+      // Calculate price based on which token is WETH
+      if (pair.token0 == WETH_ADDRESS && isToken1Stable) {
+        priceSoFar = pair.token1Price
+      } else if (pair.token1 == WETH_ADDRESS && isToken0Stable) {
+        priceSoFar = pair.token0Price
       }
     }
   }
 
-  // Check USDbC pair (bridged USDC)
-  let usdbcPairs = findPairsWithTokens(WETH_ADDRESS, USDBC_ADDRESS)
-  if (usdbcPairs.length > 0) {
-    let usdbcPair = Pair.load(usdbcPairs[0])
-    if (usdbcPair !== null && usdbcPair.reserve0.gt(MINIMUM_LIQUIDITY_THRESHOLD_ETH)) {
-      if (usdbcPair.token0 == WETH_ADDRESS) {
-        return usdbcPair.token1Price
-      } else {
-        return usdbcPair.token0Price
-      }
-    }
-  }
-
-  // Check DAI pair
-  let daiPairs = findPairsWithTokens(WETH_ADDRESS, DAI_ADDRESS)
-  if (daiPairs.length > 0) {
-    let daiPair = Pair.load(daiPairs[0])
-    if (daiPair !== null && daiPair.reserve0.gt(MINIMUM_LIQUIDITY_THRESHOLD_ETH)) {
-      if (daiPair.token0 == WETH_ADDRESS) {
-        return daiPair.token1Price
-      } else {
-        return daiPair.token0Price
-      }
-    }
-  }
-
-  return ZERO_BD
+  return priceSoFar
 }
 
-// Helper to find pairs containing both tokens
-function findPairsWithTokens(token0: string, token1: string): string[] {
-  // In a real implementation, you'd query for pairs
-  // For now, we'll check known pair addresses
-  let pairs: string[] = []
-  
-  // Check if pair exists with token0-token1 order
-  let pair = Pair.load(token0.concat('-').concat(token1))
-  if (pair !== null) {
-    pairs.push(pair.id)
+// Find derived ETH price for a token
+export function findEthPerToken(token: Token): BigDecimal {
+  if (token.id == WETH_ADDRESS) {
+    return ONE_BD
   }
-  
-  // Check if pair exists with token1-token0 order
-  pair = Pair.load(token1.concat('-').concat(token0))
-  if (pair !== null) {
-    pairs.push(pair.id)
+
+  let pairs = token.whitelistPairs
+  let largestLiquidityETH = ZERO_BD
+  let priceSoFar = ZERO_BD
+
+  // Loop through whitelist pairs
+  for (let i = 0; i < pairs.length; i++) {
+    let pair = Pair.load(pairs[i])
+    if (pair === null) continue
+
+    if (pair.reserveETH.gt(largestLiquidityETH)) {
+      let token0 = Token.load(pair.token0)
+      let token1 = Token.load(pair.token1)
+      
+      if (token0 === null || token1 === null) continue
+
+      // Calculate derived ETH based on pair liquidity
+      if (pair.token0 == token.id && token1.derivedETH !== null && token1.derivedETH.gt(ZERO_BD)) {
+        largestLiquidityETH = pair.reserveETH
+        priceSoFar = pair.token1Price.times(token1.derivedETH as BigDecimal)
+      } else if (pair.token1 == token.id && token0.derivedETH !== null && token0.derivedETH.gt(ZERO_BD)) {
+        largestLiquidityETH = pair.reserveETH
+        priceSoFar = pair.token0Price.times(token0.derivedETH as BigDecimal)
+      }
+    }
   }
-  
-  return pairs
+
+  return priceSoFar
 }
 
 // Update all USD prices
@@ -85,10 +93,7 @@ export function updatePrices(pair: Pair): void {
   }
 
   // Update ETH price
-  let ethPrice = getEthPriceInUSD()
-  if (ethPrice.gt(ZERO_BD)) {
-    bundle.ethPrice = ethPrice
-  }
+  bundle.ethPrice = getEthPriceInUSD()
   bundle.save()
 
   let token0 = Token.load(pair.token0)
@@ -99,36 +104,22 @@ export function updatePrices(pair: Pair): void {
   }
 
   // Calculate derived ETH prices
-  if (token0.id == WETH_ADDRESS) {
-    token1.derivedETH = pair.token0Price
-  } else if (token1.id == WETH_ADDRESS) {
-    token0.derivedETH = pair.token1Price
-  } else if (isStablecoin(token0.id) && bundle.ethPrice.gt(ZERO_BD)) {
-    // If token0 is stablecoin, derive token1's ETH price
-    token1.derivedETH = pair.token0Price.div(bundle.ethPrice)
-  } else if (isStablecoin(token1.id) && bundle.ethPrice.gt(ZERO_BD)) {
-    // If token1 is stablecoin, derive token0's ETH price
-    token0.derivedETH = pair.token1Price.div(bundle.ethPrice)
-  }
-
-  // If we don't have derived ETH for tokens, set to zero
-  if (token0.derivedETH === null) {
-    token0.derivedETH = ZERO_BD
-  }
-  if (token1.derivedETH === null) {
-    token1.derivedETH = ZERO_BD
-  }
-
-  // Update USD reserves and volume
-  if (bundle.ethPrice.gt(ZERO_BD)) {
-    let reserve0USD = pair.reserve0.times(token0.derivedETH as BigDecimal).times(bundle.ethPrice)
-    let reserve1USD = pair.reserve1.times(token1.derivedETH as BigDecimal).times(bundle.ethPrice)
-    pair.reserveUSD = reserve0USD.plus(reserve1USD)
-    pair.reserveETH = pair.reserve0.times(token0.derivedETH as BigDecimal)
-                        .plus(pair.reserve1.times(token1.derivedETH as BigDecimal))
-  }
+  token0.derivedETH = findEthPerToken(token0)
+  token1.derivedETH = findEthPerToken(token1)
 
   token0.save()
   token1.save()
+
+  // Update pair ETH reserve
+  pair.reserveETH = pair.reserve0.times(token0.derivedETH)
+                      .plus(pair.reserve1.times(token1.derivedETH))
+  
+  // Update pair USD reserves
+  if (bundle.ethPrice.gt(ZERO_BD)) {
+    pair.reserveUSD = pair.reserveETH.times(bundle.ethPrice)
+  } else {
+    pair.reserveUSD = ZERO_BD
+  }
+
   pair.save()
 }

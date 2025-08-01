@@ -17,6 +17,8 @@ type Token @entity(immutable: false) {
   txCount: BigInt!
   totalLiquidity: BigDecimal!
   derivedETH: BigDecimal
+  # Add whitelist pairs for pricing
+  whitelistPairs: [Pair!]!
 }
 
 type Pair @entity(immutable: false) {
