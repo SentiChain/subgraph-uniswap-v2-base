@@ -154,4 +154,4 @@ graph deploy base-uniswap-v-2
 
 - **v0.0.1** - Initial deployment with basic factory tracking
 - **v0.0.2** - Added comprehensive pool tracking and events
-- **v0.0.3** - Added USD pricing via ETH/stablecoin pairs
+- **v0.0.5** - Added USD pricing via ETH/stablecoin pairs
