@@ -97,4 +97,21 @@ export function handlePairCreated(event: PairCreated): void {
     
     // Add to token1 whitelist if token0 is WETH or stablecoin
     if (isToken0Whitelist) {
-      let whitelist1 = toke
+      let whitelist1 = token1.whitelistPairs
+      whitelist1.push(pair.id)
+      token1.whitelistPairs = whitelist1
+    }
+  }
+
+  // create the bundle
+  let bundle = Bundle.load('1')
+  if (bundle === null) {
+    bundle = new Bundle('1')
+    bundle.ethPrice = ZERO_BD
+    bundle.save()
+  }
+
+  token0.save()
+  token1.save()
+  pair.save()
+}
